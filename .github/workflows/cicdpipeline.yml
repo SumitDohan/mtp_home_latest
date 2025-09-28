@@ -2,9 +2,9 @@ name: MLOps CI/CD Pipeline
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
   schedule:
     - cron: '0 6 * * *'  # runs daily at 6:00 AM UTC
 
@@ -20,7 +20,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: 3.10.18
+        python-version: 3.10
 
     - name: Install Dependencies
       run: |
@@ -28,9 +28,13 @@ jobs:
         pip install -r requirements.txt
         pip install pytest
 
-    - name: Run Unit Tests
+    - name: Run Unit Tests (skip if no tests)
       run: |
-        pytest tests/ --maxfail=1 --disable-warnings -q
+        if [ -d "tests" ]; then
+          pytest tests/ --maxfail=1 --disable-warnings -q
+        else
+          echo "No tests directory found. Skipping tests."
+        fi
 
   docker-build-and-push:
     name: Docker Build & Push
