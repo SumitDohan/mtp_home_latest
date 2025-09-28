@@ -18,7 +18,7 @@ news_files = sorted(glob.glob(os.path.join(RAW_PATH, "news_*.csv")))
 if not news_files:
     raise FileNotFoundError("❌ No news CSV files found in data/raw/")
 news_file = news_files[-1]  # latest file
-print(f"📂 Using news file: {news_file}")
+print(f" Using news file: {news_file}")
 
 # --- Load news data ---
 news_df = pd.read_csv(news_file)
