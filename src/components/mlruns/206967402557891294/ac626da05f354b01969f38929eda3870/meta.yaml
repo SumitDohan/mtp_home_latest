@@ -1,0 +1,14 @@
+artifact_uri: file:///D:/mtp_home_latest/mtp_home_latest/src/components/mlruns/206967402557891294/ac626da05f354b01969f38929eda3870/artifacts
+end_time: 1759042098507
+entry_point_name: ''
+experiment_id: '206967402557891294'
+lifecycle_stage: active
+run_id: ac626da05f354b01969f38929eda3870
+run_name: feature_engineering
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1759042098305
+status: 3
+tags: []
+user_id: dohan

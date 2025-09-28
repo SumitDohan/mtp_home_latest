@@ -1,0 +1,8 @@
+{
+  "ticker": "^NSEI",
+  "query": "Nifty",
+  "start_date": "2025-09-15",
+  "end_date": "2025-09-28",
+  "num_stock_records": 12,
+  "num_news_articles": 50
+}
