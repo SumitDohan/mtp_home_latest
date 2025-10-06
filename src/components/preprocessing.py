@@ -5,7 +5,7 @@ import pandas as pd
 import mlflow
 
 # --- MLflow Setup ---
-mlflow.set_tracking_uri("file:/home/sweta/MTPnew/mlruns")
+mlflow.set_tracking_uri("file:/home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
 mlflow.set_experiment("Financial_Sentiment_Pipeline")
 
 # --- Directory Setup ---

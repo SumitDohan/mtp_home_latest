@@ -9,7 +9,7 @@ from datetime import date
 import mlflow
 
 # --- MLflow Setup ---
-mlflow.set_tracking_uri(r"file:D:\mtp_home_latest\mtp_home_latest\mlruns")
+mlflow.set_tracking_uri("file:/home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
 
 mlflow.set_experiment("Financial_Sentiment_Pipeline")  # Set experiment name
 

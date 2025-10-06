@@ -78,7 +78,7 @@ news_df.to_csv(output_file, index=False)
 print(f"✅ Sentiment predictions saved to {output_file}")
 
 # --- Log to MLflow ---
-mlflow.set_tracking_uri("file:/home/sweta/MTPnew/mlruns")
+mlflow.set_tracking_uri("file:/home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
 mlflow.set_experiment("Financial_Sentiment_Pipeline")
 
 with mlflow.start_run(run_name="News_Sentiment_Analysis"):
