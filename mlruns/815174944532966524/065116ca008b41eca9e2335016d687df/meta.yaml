@@ -1,0 +1,14 @@
+artifact_uri: file:D:\mtp_home_latest\mtp_home_latest\mlruns/815174944532966524/065116ca008b41eca9e2335016d687df/artifacts
+end_time: 1759743549912
+entry_point_name: ''
+experiment_id: '815174944532966524'
+lifecycle_stage: active
+run_id: 065116ca008b41eca9e2335016d687df
+run_name: News_Sentiment_Analysis
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1759743549884
+status: 3
+tags: []
+user_id: sweta

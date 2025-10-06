@@ -1,4 +1,4 @@
-# Use official Python 3.10 slim image
+# Base image
 FROM python:3.10-slim
 
 # Set working directory
@@ -19,15 +19,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file first (for caching)
+# Copy only requirements first for caching
 COPY requirements.txt .
 
-# Upgrade pip and install Python dependencies
+# Upgrade pip and install dependencies
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your code
-COPY . .
+# Copy only src folder
+COPY src/ ./src
 
-# Run the four scripts sequentially
-CMD ["bash", "-c", "python src/ingestion.py && python src/preprocessing.py && python src/model.py && python src/features.py"]
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+
+# Run scripts in components folder
+CMD ["bash", "-c", "python src/components/ingestion.py && python src/components/preprocessing.py && python src/components/news_sentiment.py && python src/components/feature.py"]

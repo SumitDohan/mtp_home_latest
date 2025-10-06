@@ -1,0 +1,14 @@
+artifact_uri: file:D:\mtp_home_latest\mtp_home_latest\mlruns/815174944532966524/c1b42dbbf6eb4fcf94f7e777a3faa3db/artifacts
+end_time: 1759743556181
+entry_point_name: ''
+experiment_id: '815174944532966524'
+lifecycle_stage: active
+run_id: c1b42dbbf6eb4fcf94f7e777a3faa3db
+run_name: feature_engineering
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1759743556169
+status: 3
+tags: []
+user_id: sweta

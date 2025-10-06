@@ -1,0 +1,14 @@
+artifact_uri: file:D:\mtp_home_latest\mtp_home_latest\mlruns/815174944532966524/4bd2590d6a484b33b33d930d8da9d661/artifacts
+end_time: 1759743535626
+entry_point_name: ''
+experiment_id: '815174944532966524'
+lifecycle_stage: active
+run_id: 4bd2590d6a484b33b33d930d8da9d661
+run_name: news_preprocessing
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1759743535617
+status: 3
+tags: []
+user_id: sweta
