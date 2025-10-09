@@ -3,7 +3,6 @@ import os
 import json
 import yfinance as yf
 import pandas as pd
-import matplotlib.pyplot as plt
 import feedparser
 from datetime import date
 import mlflow
@@ -20,14 +19,17 @@ parser.add_argument("--download-stock-only", action="store_true", help="Only dow
 args = parser.parse_args()
 
 # =========================================================
-# DVC Control: disable inside Docker (if USE_DVC=false)
+# Environment flags
 # =========================================================
-USE_DVC = os.getenv("USE_DVC", "true").lower() == "true"
+CI_MODE = os.getenv("CI", "false").lower() == "true"
+USE_DVC = os.getenv("USE_DVC", "true").lower() == "true" and not CI_MODE
 
+# =========================================================
+# DVC helper
+# =========================================================
 def safe_dvc_command(cmd_list):
-    """Run DVC command safely (skip if USE_DVC=false)."""
     if not USE_DVC:
-        print(f"⚠️ Skipping DVC command inside Docker: {' '.join(cmd_list)}")
+        print(f"⚠️ Skipping DVC command: {' '.join(cmd_list)}")
         return
     try:
         subprocess.run(cmd_list, check=True)
@@ -35,25 +37,22 @@ def safe_dvc_command(cmd_list):
         print(f"⚠️ DVC command failed: {e}")
 
 # =========================================================
-# MLflow Setup (user-writable directory)
+# MLflow setup (writable path)
 # =========================================================
-mlruns_path = os.getenv(
-    "MLFLOW_TRACKING_URI",
-    os.path.expanduser("~/mtp_home_latest/mtp_home_latest/mlruns")
-)
-mlflow.set_tracking_uri(f"file:///{mlruns_path}")
+mlruns_path = os.getenv("MLFLOW_TRACKING_URI", "./mlruns")
+mlruns_path_abs = os.path.abspath(mlruns_path)
+os.makedirs(mlruns_path_abs, exist_ok=True)
+mlflow.set_tracking_uri(f"file://{mlruns_path_abs}")
 mlflow.set_experiment("Financial_Sentiment_Pipeline")
-os.makedirs(os.path.expanduser(mlruns_path.replace("file://", "")), exist_ok=True)
 
 # =========================================================
-# Configuration
+# Config
 # =========================================================
 ticker = "^NSEI"
 query = "Nifty"
 start_date = "2025-09-15"
 end_date = date.today().isoformat()
 
-# Save data under project folder
 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 raw_dir = os.path.join(repo_root, "data", "raw")
 os.makedirs(raw_dir, exist_ok=True)
@@ -63,11 +62,11 @@ news_csv_path = os.path.join(raw_dir, "news_NIFTY.csv")
 summary_path = os.path.join(raw_dir, "ingestion_summary.json")
 
 # =========================================================
-# Fetch stock data
+# Fetch stock
 # =========================================================
 def fetch_stock_data():
     print(f"📥 Downloading stock data for {ticker} from {start_date} to {end_date}")
-    df = yf.download(ticker, start=start_date, end=end_date)
+    df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=True, progress=False)
     if df.empty:
         print("⚠️ No stock data returned. CSV will still be created as empty.")
         df = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Adj Close", "Volume"])
@@ -76,7 +75,7 @@ def fetch_stock_data():
     return stock_csv_path
 
 # =========================================================
-# Fetch news data
+# Fetch news
 # =========================================================
 def fetch_news_data():
     print(f"📰 Fetching news articles from Economic Times RSS for '{query}'")
@@ -98,12 +97,11 @@ def fetch_news_data():
     return news_csv_path
 
 # =========================================================
-# Track data files with DVC + Git
+# DVC tracking
 # =========================================================
 def track_with_dvc(file_path):
     try:
         safe_dvc_command([sys.executable, "-m", "dvc", "add", file_path])
-
         dvc_file = f"{file_path}.dvc"
         if USE_DVC:
             subprocess.run(["git", "add", dvc_file], check=True)
@@ -113,7 +111,7 @@ def track_with_dvc(file_path):
         print(f"⚠️ Skipped or failed DVC tracking for {file_path}: {e}")
 
 # =========================================================
-# Log results with MLflow
+# MLflow logging
 # =========================================================
 def log_with_mlflow(stock_path=None, news_path=None):
     with mlflow.start_run(run_name="data_ingestion"):
@@ -143,20 +141,6 @@ def log_with_mlflow(stock_path=None, news_path=None):
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2)
         mlflow.log_artifact(summary_path, artifact_path="raw_data")
-
-        # Optional visualization
-        try:
-            if not df_stock.empty and "Close" in df_stock.columns:
-                plt.figure(figsize=(8, 4))
-                df_stock["Close"].plot(title="Closing Prices")
-                plot_path = os.path.join(raw_dir, "stock_plot.png")
-                plt.savefig(plot_path)
-                plt.close()
-                mlflow.log_artifact(plot_path, artifact_path="visuals")
-            else:
-                print("⚠️ Stock CSV empty or 'Close' column missing. Skipping plot.")
-        except Exception as e:
-            print(f"⚠️ Failed to plot closing prices: {e}")
 
         print("📦 Data artifacts, params, metrics, and summary logged to MLflow")
 
