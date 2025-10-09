@@ -4,6 +4,9 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
+# Run everything as root (default in slim images)
+USER root
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -29,8 +32,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source code
 COPY src/ ./src
 
-# Create necessary directories
-RUN mkdir -p /app/mlruns /app/data/raw /app/data/processed
+# Create necessary directories and set full root permissions
+RUN mkdir -p /app/mlruns /app/data/raw /app/data/processed \
+    && chmod -R 777 /app/mlruns /app/data/processed /app/data/raw /app/src
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
