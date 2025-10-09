@@ -22,6 +22,7 @@ args = parser.parse_args()
 # Environment flags
 # =========================================================
 CI_MODE = os.getenv("CI", "false").lower() == "true"
+DOCKER_MODE = os.getenv("DOCKER", "false").lower() == "true"
 USE_DVC = os.getenv("USE_DVC", "true").lower() == "true" and not CI_MODE
 
 # =========================================================
@@ -39,18 +40,28 @@ def safe_dvc_command(cmd_list):
 # =========================================================
 # MLflow setup (writable path)
 # =========================================================
-mlruns_path = os.getenv("MLFLOW_TRACKING_URI", "./mlruns")
-mlruns_path_abs = os.path.abspath(mlruns_path)
-os.makedirs(mlruns_path_abs, exist_ok=True)
-mlflow.set_tracking_uri(f"file://{mlruns_path_abs}")
+def get_mlruns_path():
+    # Inside Docker or CI, use /app
+    if DOCKER_MODE or CI_MODE:
+        path = "/app/mlruns"
+    else:
+        # On host, use home directory
+        home = os.path.expanduser("~")
+        path = os.path.join(home, "mtp_home_latest", "mlruns")
+    return path
+
+mlruns_dir = get_mlruns_path()
+os.makedirs(mlruns_dir, exist_ok=True)
+mlflow.set_tracking_uri(f"file://{mlruns_dir}")
 mlflow.set_experiment("Financial_Sentiment_Pipeline")
+print(f"ℹ️ MLflow tracking at: {mlruns_dir}")
 
 # =========================================================
 # Config
 # =========================================================
 ticker = "^NSEI"
 query = "Nifty"
-start_date = "2025-09-15"
+start_date = "2025-10-07"
 end_date = date.today().isoformat()
 
 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

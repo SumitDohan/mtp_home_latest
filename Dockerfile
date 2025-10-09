@@ -32,10 +32,6 @@ COPY src/ ./src
 # Create necessary directories
 RUN mkdir -p /app/mlruns /app/data/raw /app/data/processed
 
-# Add non-root user and switch
-RUN useradd -ms /bin/bash mluser
-USER mluser
-
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
     MLFLOW_TRACKING_URI=file:/app/mlruns \
@@ -55,22 +51,22 @@ RUN git config --global --add safe.directory /app
 CMD bash -c "\
 echo '🧹 Cleaning cache directories...' && \
 find /app/src -name '__pycache__' -exec rm -rf {} + && \
-# Pull DVC-tracked data if enabled \
 if [ \"$USE_DVC\" = \"true\" ]; then \
-    echo '📥 Pulling DVC-tracked data...' && dvc pull || echo '⚠️ DVC pull failed, continuing...'; \
+    echo '📥 Pulling DVC-tracked data...' && dvc pull || echo '⚠️ DVC pull failed, proceeding anyway'; \
 fi && \
 # Auto-download missing CSV files \
-[ ! -f /app/data/raw/news_NIFTY.csv ] && echo '📡 news_NIFTY.csv missing, downloading...' && python src/components/ingestion.py --download-news-only || true; \
-[ ! -f /app/data/raw/stock.csv ] && echo '📡 stock.csv missing, downloading...' && python src/components/ingestion.py --download-stock-only || true; \
-# Run full ingestion \
-echo '📥 Running Ingestion...' && python src/components/ingestion.py || echo '⚠️ Ingestion failed, continuing...'; \
-# Run preprocessing \
-echo '🔄 Running Preprocessing...' && python src/components/preprocessing.py || echo '⚠️ Preprocessing failed, continuing...'; \
-# Run model \
-echo '🧠 Running Model...' && python src/components/model.py || echo '⚠️ Model run failed, continuing...'; \
-# Run feature extraction \
-echo '📊 Running Feature Extraction...' && python src/components/feature.py || echo '⚠️ Feature extraction failed, continuing...'; \
-# Start MLflow UI and FastAPI if not CI \
+if [ ! -f /app/data/raw/news_NIFTY.csv ]; then \
+    echo '📡 news_NIFTY.csv missing, downloading...' && \
+    python src/components/ingestion.py --download-news-only; \
+fi && \
+if [ ! -f /app/data/raw/stock.csv ]; then \
+    echo '📡 stock.csv missing, downloading...' && \
+    python src/components/ingestion.py --download-stock-only; \
+fi && \
+echo '📥 Running Ingestion...' && python src/components/ingestion.py || echo '⚠️ Ingestion failed, continuing...' && \
+echo '🔄 Running Preprocessing...' && python src/components/preprocessing.py || echo '⚠️ Preprocessing failed, continuing...' && \
+echo '🧠 Running Model...' && python src/components/model.py || echo '⚠️ Model run failed, continuing...' && \
+echo '📊 Running Feature Extraction...' && python src/components/feature.py || echo '⚠️ Feature extraction failed, continuing...' && \
 if [ \"$CI\" != \"true\" ]; then \
     echo '🚀 Starting MLflow UI and FastAPI servers...' && \
     mlflow ui --host 0.0.0.0 --port ${MLFLOW_PORT} & \

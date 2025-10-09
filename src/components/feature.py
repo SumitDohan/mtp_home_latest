@@ -7,115 +7,106 @@ import subprocess
 import sys
 from datetime import datetime
 
-# --- Environment setup ---
-USE_DVC = os.getenv("USE_DVC", "true").lower() == "true"
+# =========================================================
+# Environment Setup
+# =========================================================
+CI_MODE = os.getenv("CI", "false").lower() == "true"
+DOCKER_MODE = os.getenv("DOCKER", "false").lower() == "true"
+USE_DVC = os.getenv("USE_DVC", "true").lower() == "true" and not CI_MODE
 
-# --- Define project paths ---
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PROCESSED_PATH = os.path.join(PROJECT_ROOT, "data/processed")
+# =========================================================
+# Project Paths
+# =========================================================
+repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RAW_PATH = os.path.join(repo_root, "data/raw")
+PROCESSED_PATH = os.path.join(repo_root, "data/processed")
 os.makedirs(PROCESSED_PATH, exist_ok=True)
 
-# --- MLflow setup ---
-MLFLOW_TRACKING_URI = os.getenv(
-    "MLFLOW_TRACKING_URI",
-    f"file:///{os.path.join(PROJECT_ROOT, 'mlruns')}"
-)
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+# =========================================================
+# MLflow Setup
+# =========================================================
+if DOCKER_MODE or CI_MODE:
+    mlruns_dir = "/app/mlruns"
+else:
+    mlruns_dir = os.path.join(repo_root, "mlruns")
+
+os.makedirs(mlruns_dir, exist_ok=True)
+mlflow.set_tracking_uri(f"file://{mlruns_dir}")
 mlflow.set_experiment("Financial_Sentiment_Pipeline")
+print(f"ℹ️ MLflow tracking at: {mlruns_dir}")
 
-# --- Load latest processed news sentiment file ---
-news_files = sorted(glob.glob(os.path.join(PROCESSED_PATH, "processed_news_sentiment*.csv")))
-if not news_files:
-    raise FileNotFoundError("❌ No processed news sentiment CSV found in data/processed/")
-news_file = news_files[-1]
-print(f"📂 Using processed news sentiment file: {news_file}")
-
-news_df = pd.read_csv(news_file, parse_dates=["published"])
-print(f"✅ Loaded {len(news_df)} news articles")
-
-# --- Validate columns ---
-required_cols = {"sentiment_score", "sentiment_label", "published"}
-missing = required_cols - set(news_df.columns)
-if missing:
-    raise ValueError(f"❌ Missing columns in {news_file}: {missing}")
-
-# --- Clean and standardize date ---
-news_df["published"] = pd.to_datetime(news_df["published"], errors='coerce')
-news_df = news_df.dropna(subset=["published"])
-news_df["published"] = news_df["published"].dt.date
-
-# --- Aggregate daily sentiment metrics ---
-daily_sentiment = news_df.groupby("published").agg(
-    avg_sentiment=("sentiment_score", "mean"),
-    percent_negative=("sentiment_label", lambda x: (x == "negative").mean() * 100)
-).reset_index().rename(columns={"published": "Date"})
-
-# --- Investment advice rules ---
-def get_investment_advice(row):
-    if row["percent_negative"] >= 50:
-        return "HIGH RISK — AVOID INVESTING"
-    elif row["percent_negative"] >= 35:
-        return "NOT GOOD TO INVEST"
-    else:
-        return "NORMAL DAY"
-
-daily_sentiment["investment_advice"] = daily_sentiment.apply(get_investment_advice, axis=1)
-
-# --- Save engineered features safely ---
-base_file = os.path.join(PROCESSED_PATH, "features.csv")
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-features_file = base_file
-
-# If file exists, create a timestamped backup
-if os.path.exists(base_file):
-    features_file = os.path.join(PROCESSED_PATH, f"features_{timestamp}.csv")
-
-try:
-    daily_sentiment.to_csv(features_file, index=False)
-    print(f"✅ Feature-engineered dataset saved: {features_file}")
-except PermissionError:
-    features_file = os.path.join(PROCESSED_PATH, f"features_temp_{timestamp}.csv")
-    daily_sentiment.to_csv(features_file, index=False)
-    print(f"⚠️ Permission issue detected. Saved to temporary file: {features_file}")
-
-# --- Optional: Track features using DVC ---
-def track_with_dvc(file_path):
-    if not USE_DVC:
-        print(f"⚠️ Skipping DVC tracking for {file_path}")
+# =========================================================
+# Utility: Safe DVC Commands
+# =========================================================
+def safe_dvc_command(cmd_list):
+    if not USE_DVC or DOCKER_MODE or CI_MODE:
+        print(f"⚠️ Skipping DVC command: {' '.join(cmd_list)}")
         return
-
     try:
-        subprocess.run([sys.executable, "-m", "dvc", "add", file_path], check=True)
+        subprocess.run(cmd_list, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ DVC command failed: {e}")
+
+# =========================================================
+# Load Latest News CSV
+# =========================================================
+news_files = sorted(glob.glob(os.path.join(RAW_PATH, "news_*.csv")))
+if not news_files:
+    raise FileNotFoundError(f"❌ No news CSV files found in {RAW_PATH}")
+news_file = news_files[-1]
+print(f"📰 Using latest news file: {news_file}")
+
+# =========================================================
+# Load and preprocess news data
+# =========================================================
+news_df = pd.read_csv(news_file)
+
+# Ensure all expected columns exist
+expected_cols = ["title", "link", "published", "summary"]
+for col in expected_cols:
+    if col not in news_df.columns:
+        news_df[col] = ""
+
+processed_df = news_df[expected_cols].copy()
+
+# Add timestamp to processed filename
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+processed_file = os.path.join(PROCESSED_PATH, f"processed_news_{timestamp}.csv")
+processed_df.to_csv(processed_file, index=False)
+print(f"✅ Processed news saved to {processed_file}")
+
+# =========================================================
+# DVC Tracking
+# =========================================================
+def track_with_dvc(file_path):
+    """Track file using DVC and commit to Git."""
+    if not USE_DVC or DOCKER_MODE or CI_MODE:
+        print(f"⚠️ Skipping DVC tracking for {file_path} inside Docker/CI.")
+        return
+    try:
+        safe_dvc_command([sys.executable, "-m", "dvc", "add", file_path])
         subprocess.run(["git", "add", f"{file_path}.dvc"], check=True)
         subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=False)
         print(f"✅ {file_path} tracked with DVC and Git commit attempted.")
     except subprocess.CalledProcessError as e:
-        print(f"⚠️ DVC tracking failed for {file_path}: {e}")
+        print(f"⚠️ Failed to track {file_path} with DVC/Git: {e}")
 
-track_with_dvc(features_file)
+track_with_dvc(processed_file)
 
-# --- Log with MLflow ---
-with mlflow.start_run(run_name=f"feature_engineering_{timestamp}"):
-    mlflow.log_artifact(features_file, artifact_path="features")
-    mlflow.log_metric("num_days", len(daily_sentiment))
-    mlflow.log_metric("avg_daily_negative_percent", daily_sentiment["percent_negative"].mean())
+# Optional: Push to DVC remote (skip inside Docker/CI)
+if USE_DVC and not (DOCKER_MODE or CI_MODE):
+    try:
+        subprocess.run([sys.executable, "-m", "dvc", "push"], check=True)
+        print(f"📤 Pushed {processed_file} to default DVC remote.")
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Failed to push {processed_file} to DVC remote: {e}")
 
-    # --- Identify and log high-negative days ---
-    high_neg_days = daily_sentiment[daily_sentiment["percent_negative"] >= 35]
-    high_neg_path = os.path.join(PROCESSED_PATH, f"high_negative_days_{timestamp}.txt")
+# =========================================================
+# Log to MLflow
+# =========================================================
+with mlflow.start_run(run_name=f"news_preprocessing_{timestamp}"):
+    mlflow.log_artifact(news_file, artifact_path="raw_news")
+    mlflow.log_artifact(processed_file, artifact_path="processed_news")
+    mlflow.log_metric("num_news_articles", len(processed_df))
 
-    with open(high_neg_path, "w") as f:
-        for _, row in high_neg_days.iterrows():
-            f.write(f"{row['Date']} — {row['percent_negative']:.1f}% negative: {row['investment_advice']}\n")
-
-    mlflow.log_artifact(high_neg_path, artifact_path="features")
-
-print("✅ Feature engineering completed and logged to MLflow.")
-
-# --- Print summary of high negative days ---
-if not high_neg_days.empty:
-    print("\n📉 Days with high negative sentiment:")
-    for _, row in high_neg_days.iterrows():
-        print(f"  - {row['Date']} — {row['percent_negative']:.1f}% negative: {row['investment_advice']}")
-else:
-    print("\n✅ No high-negative-sentiment days detected.")
+print("📦 News preprocessing complete and logged to MLflow.")
