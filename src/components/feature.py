@@ -3,9 +3,12 @@ import os
 import glob
 import pandas as pd
 import mlflow
+import subprocess
+import sys
 
-# --- Paths ---
-PROCESSED_PATH = "data/processed"
+# --- Project root paths ---
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROCESSED_PATH = os.path.join(PROJECT_ROOT, "data/processed")
 os.makedirs(PROCESSED_PATH, exist_ok=True)
 
 # --- MLflow Setup ---
@@ -50,6 +53,18 @@ daily_sentiment["investment_advice"] = daily_sentiment.apply(get_investment_advi
 features_file = os.path.join(PROCESSED_PATH, "features.csv")
 daily_sentiment.to_csv(features_file, index=False)
 print(f"✅ Feature-engineered dataset saved to {features_file}")
+
+# --- Track features with DVC ---
+def track_with_dvc(file_path):
+    try:
+        subprocess.run([sys.executable, "-m", "dvc", "add", file_path], check=True)
+        subprocess.run(["git", "add", f"{file_path}.dvc"], check=True)
+        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=True)
+        print(f"✅ {file_path} tracked with DVC and committed")
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Failed to track {file_path} with DVC: {e}")
+
+track_with_dvc(features_file)
 
 # --- Log to MLflow ---
 with mlflow.start_run(run_name="feature_engineering"):

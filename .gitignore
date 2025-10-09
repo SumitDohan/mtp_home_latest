@@ -1,6 +1,8 @@
 .env
 mlproject.egg-info
-data
+data/*
+!data/raw/stock.csv
+!data/raw/news_NIFTY.csv
 env
 logs
 mlopsproject.egg-info

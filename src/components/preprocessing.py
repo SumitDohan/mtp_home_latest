@@ -3,14 +3,17 @@ import os
 import glob
 import pandas as pd
 import mlflow
+import subprocess
+import sys
 
 # --- MLflow Setup ---
 mlflow.set_tracking_uri("file:/home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
 mlflow.set_experiment("Financial_Sentiment_Pipeline")
 
 # --- Directory Setup ---
-RAW_PATH = "data/raw"
-PROCESSED_PATH = "data/processed"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RAW_PATH = os.path.join(PROJECT_ROOT, "data/raw")
+PROCESSED_PATH = os.path.join(PROJECT_ROOT, "data/processed")
 os.makedirs(PROCESSED_PATH, exist_ok=True)
 
 # --- Load latest news CSV ---
@@ -30,6 +33,18 @@ processed_df = news_df[["title", "link", "published", "summary"]].copy()
 processed_file = os.path.join(PROCESSED_PATH, f"processed_news.csv")
 processed_df.to_csv(processed_file, index=False)
 print(f"✅ Processed news saved to {processed_file}")
+
+# --- Track processed file with DVC ---
+def track_with_dvc(file_path):
+    try:
+        subprocess.run([sys.executable, "-m", "dvc", "add", file_path], check=True)
+        subprocess.run(["git", "add", f"{file_path}.dvc"], check=True)
+        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=True)
+        print(f"✅ {file_path} tracked with DVC and committed")
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Failed to track {file_path} with DVC: {e}")
+
+track_with_dvc(processed_file)
 
 # --- Log to MLflow ---
 with mlflow.start_run(run_name="news_preprocessing"):

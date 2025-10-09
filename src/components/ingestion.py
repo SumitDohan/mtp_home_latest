@@ -7,19 +7,21 @@ import matplotlib.pyplot as plt
 import feedparser
 from datetime import date
 import mlflow
+import subprocess
+import sys
 
 # --- MLflow Setup ---
 mlflow.set_tracking_uri("file:/home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
-
 mlflow.set_experiment("Financial_Sentiment_Pipeline")  # Set experiment name
 
 # --- Configuration ---
 ticker = "^NSEI"
-query = "Nifty"  # used only for logging
+query = "Nifty"
 start_date = "2025-09-15"
 end_date = date.today().isoformat()
 
-raw_dir = "data/raw"
+# --- Save data at project root ---
+raw_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data/raw")
 os.makedirs(raw_dir, exist_ok=True)
 
 stock_csv_path = os.path.join(raw_dir, "stock.csv")
@@ -36,14 +38,14 @@ def fetch_stock_data():
     print(f"✅ Stock data saved to {stock_csv_path}")
     return stock_csv_path
 
-# --- Fetch news data from Economic Times RSS ---
+# --- Fetch news data ---
 def fetch_news_data():
     print(f"📰 Fetching news articles from Economic Times RSS for '{query}'")
     RSS_URL = "https://economictimes.indiatimes.com/markets/stocks/news/rssfeeds/1977021501.cms"
     feed = feedparser.parse(RSS_URL)
 
     articles = []
-    for entry in feed.entries[:50]:  # limit to top 50 articles
+    for entry in feed.entries[:50]:
         articles.append({
             "title": entry.title,
             "link": entry.link,
@@ -51,11 +53,22 @@ def fetch_news_data():
             "summary": entry.summary
         })
 
-    # Save as CSV
     df = pd.DataFrame(articles)
     df.to_csv(news_csv_path, index=False)
     print(f"✅ Saved {len(df)} news articles to {news_csv_path}")
     return news_csv_path
+
+# --- DVC add & git commit ---
+def track_with_dvc(file_path):
+    try:
+        # Add file to DVC
+        subprocess.run([sys.executable, "-m", "dvc", "add", file_path], check=True)
+        # Add .dvc file to git
+        subprocess.run(["git", "add", f"{file_path}.dvc"], check=True)
+        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=True)
+        print(f"✅ {file_path} tracked with DVC and committed")
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Failed to track {file_path} with DVC: {e}")
 
 # --- MLflow logging ---
 def log_with_mlflow(stock_path, news_path):
@@ -77,10 +90,6 @@ def log_with_mlflow(stock_path, news_path):
         mlflow.log_metric("num_stock_records", len(df_stock))
         mlflow.log_metric("num_news_articles", len(df_news))
 
-        # Log tags
-        mlflow.set_tag("phase", "data_ingestion")
-        mlflow.set_tag("data_source", "yfinance_and_ET_RSS")
-
         # Log summary JSON
         summary = {
             "ticker": ticker,
@@ -94,7 +103,7 @@ def log_with_mlflow(stock_path, news_path):
             json.dump(summary, f, indent=2)
         mlflow.log_artifact(summary_path, artifact_path="raw_data")
 
-        # Optional: Log stock plot
+        # Optional: stock plot
         try:
             df_stock["Close"].plot(title="Closing Prices")
             plot_path = os.path.join(raw_dir, "stock_plot.png")
@@ -111,6 +120,12 @@ if __name__ == "__main__":
     try:
         stock_path = fetch_stock_data()
         news_path = fetch_news_data()
+
+        # Track files with DVC
+        track_with_dvc(stock_path)
+        track_with_dvc(news_path)
+
+        # Log to MLflow
         log_with_mlflow(stock_path, news_path)
     except Exception as e:
         print(f"❌ Ingestion failed: {e}")

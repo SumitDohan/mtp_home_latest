@@ -5,13 +5,16 @@ import pandas as pd
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 import mlflow
+import subprocess
+import sys
 
-# --- Paths ---
-RAW_PATH = "data/raw"
-PROCESSED_PATH = "data/processed"
+# --- Project root paths ---
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RAW_PATH = os.path.join(PROJECT_ROOT, "data/raw")
+PROCESSED_PATH = os.path.join(PROJECT_ROOT, "data/processed")
 os.makedirs(PROCESSED_PATH, exist_ok=True)
 
-# --- Pick latest news CSV ---
+# --- Load latest news CSV ---
 news_files = sorted(glob.glob(os.path.join(RAW_PATH, "news_*.csv")))
 if not news_files:
     raise FileNotFoundError("❌ No news CSV files found in data/raw/")
@@ -76,6 +79,18 @@ else:
 output_file = os.path.join(PROCESSED_PATH, "processed_news_sentiment.csv")
 news_df.to_csv(output_file, index=False)
 print(f"✅ Sentiment predictions saved to {output_file}")
+
+# --- Track processed file with DVC ---
+def track_with_dvc(file_path):
+    try:
+        subprocess.run([sys.executable, "-m", "dvc", "add", file_path], check=True)
+        subprocess.run(["git", "add", f"{file_path}.dvc"], check=True)
+        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=True)
+        print(f"✅ {file_path} tracked with DVC and committed")
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Failed to track {file_path} with DVC: {e}")
+
+track_with_dvc(output_file)
 
 # --- Log to MLflow ---
 mlflow.set_tracking_uri("file:/home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
