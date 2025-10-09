@@ -1,9 +1,14 @@
 .env
 mlproject.egg-info
-data/*
-!data/raw/stock.csv
-!data/raw/news_NIFTY.csv
 env
 logs
 mlopsproject.egg-info
 __pycache__
+# MLflow run artifacts
+mlruns/
+
+# Ignore everything in data except DVC metadata and tracked files
+data/*
+!data/raw/
+!data/raw/*.dvc
+!data/raw/.gitignore
