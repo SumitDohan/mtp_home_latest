@@ -3,3 +3,4 @@ outs:
   size: 1343
   hash: md5
   path: stock.csv
+  isexec: true
