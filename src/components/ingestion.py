@@ -9,6 +9,15 @@ from datetime import date
 import mlflow
 import subprocess
 import sys
+import argparse
+
+# =========================================================
+# CLI arguments for selective download
+# =========================================================
+parser = argparse.ArgumentParser()
+parser.add_argument("--download-news-only", action="store_true", help="Only download news CSV")
+parser.add_argument("--download-stock-only", action="store_true", help="Only download stock CSV")
+args = parser.parse_args()
 
 # =========================================================
 # DVC Control: disable inside Docker (if USE_DVC=false)
@@ -26,7 +35,7 @@ def safe_dvc_command(cmd_list):
         print(f"⚠️ DVC command failed: {e}")
 
 # =========================================================
-# MLflow Setup (use user-writable directory)
+# MLflow Setup (user-writable directory)
 # =========================================================
 mlruns_path = os.getenv(
     "MLFLOW_TRACKING_URI",
@@ -61,6 +70,7 @@ def fetch_stock_data():
     df = yf.download(ticker, start=start_date, end=end_date)
     if df.empty:
         print("⚠️ No stock data returned. CSV will still be created as empty.")
+        df = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Adj Close", "Volume"])
     df.to_csv(stock_csv_path)
     print(f"✅ Stock data saved to {stock_csv_path}")
     return stock_csv_path
@@ -105,18 +115,20 @@ def track_with_dvc(file_path):
 # =========================================================
 # Log results with MLflow
 # =========================================================
-def log_with_mlflow(stock_path, news_path):
+def log_with_mlflow(stock_path=None, news_path=None):
     with mlflow.start_run(run_name="data_ingestion"):
-        mlflow.log_artifact(stock_path, artifact_path="raw_data")
-        mlflow.log_artifact(news_path, artifact_path="raw_data")
+        if stock_path:
+            mlflow.log_artifact(stock_path, artifact_path="raw_data")
+        if news_path:
+            mlflow.log_artifact(news_path, artifact_path="raw_data")
 
         mlflow.log_param("ticker", ticker)
         mlflow.log_param("query", query)
         mlflow.log_param("start_date", start_date)
         mlflow.log_param("end_date", end_date)
 
-        df_stock = pd.read_csv(stock_path)
-        df_news = pd.read_csv(news_path)
+        df_stock = pd.read_csv(stock_path) if stock_path else pd.DataFrame()
+        df_news = pd.read_csv(news_path) if news_path else pd.DataFrame()
         mlflow.log_metric("num_stock_records", len(df_stock))
         mlflow.log_metric("num_news_articles", len(df_news))
 
@@ -153,12 +165,22 @@ def log_with_mlflow(stock_path, news_path):
 # =========================================================
 if __name__ == "__main__":
     try:
-        stock_path = fetch_stock_data()
-        news_path = fetch_news_data()
+        stock_path, news_path = None, None
 
-        track_with_dvc(stock_path)
-        track_with_dvc(news_path)
+        if args.download_stock_only:
+            stock_path = fetch_stock_data()
+        elif args.download_news_only:
+            news_path = fetch_news_data()
+        else:
+            stock_path = fetch_stock_data()
+            news_path = fetch_news_data()
+
+        if stock_path:
+            track_with_dvc(stock_path)
+        if news_path:
+            track_with_dvc(news_path)
 
         log_with_mlflow(stock_path, news_path)
+
     except Exception as e:
         print(f"❌ Ingestion failed: {e}")
