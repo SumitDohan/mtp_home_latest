@@ -1,13 +1,17 @@
-# Base image
+# ============================================================
+# ✅ Base image
+# ============================================================
 FROM python:3.10-slim
 
-# Set working directory
+# ============================================================
+# ✅ Set working directory and run as root
+# ============================================================
 WORKDIR /app
-
-# Run everything as root (default in slim images)
 USER root
 
-# Install system dependencies
+# ============================================================
+# ✅ Install system dependencies
+# ============================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
@@ -22,21 +26,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (for caching)
-COPY requirements.txt ./
+# ============================================================
+# ✅ Copy requirements first (to leverage Docker layer caching)
+# ============================================================
+COPY requirements.txt ./ 
 
-# Upgrade pip and install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy source code
+# ============================================================
+# ✅ Copy source code
+# ============================================================
 COPY src/ ./src
 
-# Create necessary directories and set full root permissions
-RUN mkdir -p /app/mlruns /app/data/raw /app/data/processed \
-    && chmod -R 777 /app/mlruns /app/data/processed /app/data/raw /app/src
+# ============================================================
+# ✅ Create required directories and fix permissions
+# ============================================================
+RUN mkdir -p /app/mlruns /app/data/raw /app/data/processed /app/src && \
+    chmod -R 777 /app/mlruns /app/data /app/src
 
-# Environment variables
+# ============================================================
+# ✅ Configure Git & DVC safety (Fix #3)
+# ============================================================
+RUN git config --global --add safe.directory /app && \
+    git config --global --add safe.directory /app/mtp_home_latest && \
+    git config --global --add safe.directory /app/src
+
+# ============================================================
+# ✅ Environment variables
+# ============================================================
 ENV PYTHONUNBUFFERED=1 \
     MLFLOW_TRACKING_URI=file:/app/mlruns \
     MLFLOW_PORT=5050 \
@@ -45,20 +63,26 @@ ENV PYTHONUNBUFFERED=1 \
     CI=false \
     TZ=Asia/Kolkata
 
-# Expose ports
+# ============================================================
+# ✅ Expose service ports
+# ============================================================
 EXPOSE ${FASTAPI_PORT} ${MLFLOW_PORT}
 
-# Configure Git safe directory
-RUN git config --global --add safe.directory /app
-
-# Entrypoint: run pipeline
+# ============================================================
+# ✅ Entrypoint script
+# ============================================================
 CMD bash -c "\
 echo '🧹 Cleaning cache directories...' && \
 find /app/src -name '__pycache__' -exec rm -rf {} + && \
+
+# --- DVC Handling ---
 if [ \"$USE_DVC\" = \"true\" ]; then \
-    echo '📥 Pulling DVC-tracked data...' && dvc pull || echo '⚠️ DVC pull failed, proceeding anyway'; \
+    echo '📥 Pulling DVC-tracked data...' && \
+    dvc pull || (echo '⚠️ DVC pull failed — attempting to reinitialize...' && \
+    dvc init --no-scm && echo '✅ DVC reinitialized (no-scm mode)'); \
 fi && \
-# Auto-download missing CSV files \
+
+# --- Auto-download missing CSVs ---
 if [ ! -f /app/data/raw/news_NIFTY.csv ]; then \
     echo '📡 news_NIFTY.csv missing, downloading...' && \
     python src/components/ingestion.py --download-news-only; \
@@ -67,10 +91,14 @@ if [ ! -f /app/data/raw/stock.csv ]; then \
     echo '📡 stock.csv missing, downloading...' && \
     python src/components/ingestion.py --download-stock-only; \
 fi && \
+
+# --- Run Pipeline ---
 echo '📥 Running Ingestion...' && python src/components/ingestion.py || echo '⚠️ Ingestion failed, continuing...' && \
 echo '🔄 Running Preprocessing...' && python src/components/preprocessing.py || echo '⚠️ Preprocessing failed, continuing...' && \
 echo '🧠 Running Model...' && python src/components/model.py || echo '⚠️ Model run failed, continuing...' && \
 echo '📊 Running Feature Extraction...' && python src/components/feature.py || echo '⚠️ Feature extraction failed, continuing...' && \
+
+# --- Conditional Server Launch ---
 if [ \"$CI\" != \"true\" ]; then \
     echo '🚀 Starting MLflow UI and FastAPI servers...' && \
     mlflow ui --host 0.0.0.0 --port ${MLFLOW_PORT} & \
