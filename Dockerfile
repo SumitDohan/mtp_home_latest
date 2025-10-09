@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements first for caching
+# Copy requirements first (for caching)
 COPY requirements.txt ./
 
 # Upgrade pip and install Python dependencies
@@ -29,8 +29,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source code
 COPY src/ ./src
 
-# Create MLflow run directory (persist MLflow logs)
-RUN mkdir -p /app/mlruns
+# Create MLflow directory (persist logs)
+RUN mkdir -p /app/mlruns /app/data/raw /app/data/processed
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -43,15 +43,16 @@ ENV PYTHONUNBUFFERED=1 \
 # Expose ports
 EXPOSE ${FASTAPI_PORT} ${MLFLOW_PORT}
 
-# Configure Git safe directory to avoid warnings
+# Configure Git safe directory
 RUN git config --global --add safe.directory /app
 
-# Pipeline entrypoint: pull DVC data, run pipeline, start servers
+# Entrypoint: run full pipeline + start servers
 CMD bash -c "\
 echo '🧹 Cleaning cache directories...' && \
 find /app/src -name '__pycache__' -exec rm -rf {} + && \
 if [ \"$USE_DVC\" = \"true\" ]; then \
-    echo '📥 Pulling DVC-tracked data...' && dvc pull; \
+    echo '📥 Pulling DVC-tracked data...' && \
+    dvc pull || echo '⚠️ DVC pull failed, proceeding anyway'; \
 fi && \
 echo '📥 Running Ingestion...' && python src/components/ingestion.py && \
 echo '🔄 Running Preprocessing...' && python src/components/preprocessing.py && \
