@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 # --- MLflow Setup ---
-mlflow.set_tracking_uri("file:/home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
+mlflow.set_tracking_uri("file:///home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
 mlflow.set_experiment("Financial_Sentiment_Pipeline")
 
 # --- Directory Setup ---
@@ -21,30 +21,43 @@ news_files = sorted(glob.glob(os.path.join(RAW_PATH, "news_*.csv")))
 if not news_files:
     raise FileNotFoundError("❌ No news CSV files found in data/raw/")
 news_file = news_files[-1]  # latest file
-print(f" Using news file: {news_file}")
+print(f"📰 Using news file: {news_file}")
 
 # --- Load news data ---
 news_df = pd.read_csv(news_file)
 
+# --- Ensure expected columns exist ---
+expected_cols = ["title", "link", "published", "summary"]
+for col in expected_cols:
+    if col not in news_df.columns:
+        news_df[col] = ""  # fill missing columns
+
 # --- Preprocessing (example: keep only relevant columns) ---
-processed_df = news_df[["title", "link", "published", "summary"]].copy()
+processed_df = news_df[expected_cols].copy()
 
 # --- Save processed CSV ---
 processed_file = os.path.join(PROCESSED_PATH, f"processed_news.csv")
 processed_df.to_csv(processed_file, index=False)
 print(f"✅ Processed news saved to {processed_file}")
 
-# --- Track processed file with DVC ---
+# --- DVC add & Git auto-stage ---
 def track_with_dvc(file_path):
     try:
         subprocess.run([sys.executable, "-m", "dvc", "add", file_path], check=True)
         subprocess.run(["git", "add", f"{file_path}.dvc"], check=True)
-        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=True)
-        print(f"✅ {file_path} tracked with DVC and committed")
+        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=False)
+        print(f"✅ {file_path} tracked with DVC and Git commit attempted")
     except subprocess.CalledProcessError as e:
-        print(f"⚠️ Failed to track {file_path} with DVC: {e}")
+        print(f"⚠️ Failed to track {file_path} with DVC/Git: {e}")
 
 track_with_dvc(processed_file)
+
+# --- Optional: Push DVC-tracked file to default remote ---
+try:
+    subprocess.run([sys.executable, "-m", "dvc", "push"], check=True)
+    print(f"📤 Pushed {processed_file} to default DVC remote")
+except subprocess.CalledProcessError as e:
+    print(f"⚠️ Failed to push {processed_file} to DVC remote: {e}")
 
 # --- Log to MLflow ---
 with mlflow.start_run(run_name="news_preprocessing"):
@@ -52,4 +65,4 @@ with mlflow.start_run(run_name="news_preprocessing"):
     mlflow.log_artifact(news_file, artifact_path="raw_news")
     mlflow.log_metric("num_news_articles", len(processed_df))
 
-print("✅ News preprocessing complete and logged to MLflow.")
+print("📦 News preprocessing complete and logged to MLflow.")

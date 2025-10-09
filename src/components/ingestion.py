@@ -1,4 +1,4 @@
-# src/ingestion.py
+# src/components/ingestion.py
 import os
 import json
 import yfinance as yf
@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 # --- MLflow Setup ---
-mlflow.set_tracking_uri("file:/home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
+mlflow.set_tracking_uri("file:///home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
 mlflow.set_experiment("Financial_Sentiment_Pipeline")  # Set experiment name
 
 # --- Configuration ---
@@ -20,8 +20,9 @@ query = "Nifty"
 start_date = "2025-09-15"
 end_date = date.today().isoformat()
 
-# --- Save data at project root ---
-raw_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data/raw")
+# --- Save data at root-level data/raw ---
+repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+raw_dir = os.path.join(repo_root, "data/raw")
 os.makedirs(raw_dir, exist_ok=True)
 
 stock_csv_path = os.path.join(raw_dir, "stock.csv")
@@ -33,7 +34,7 @@ def fetch_stock_data():
     print(f"📥 Downloading stock data for {ticker} from {start_date} to {end_date}")
     df = yf.download(ticker, start=start_date, end=end_date)
     if df.empty:
-        raise ValueError("⚠️ No stock data returned.")
+        print("⚠️ No stock data returned. CSV will still be created as empty.")
     df.to_csv(stock_csv_path)
     print(f"✅ Stock data saved to {stock_csv_path}")
     return stock_csv_path
@@ -58,17 +59,21 @@ def fetch_news_data():
     print(f"✅ Saved {len(df)} news articles to {news_csv_path}")
     return news_csv_path
 
-# --- DVC add & git commit ---
+# --- DVC add & Git auto-stage ---
 def track_with_dvc(file_path):
     try:
         # Add file to DVC
         subprocess.run([sys.executable, "-m", "dvc", "add", file_path], check=True)
-        # Add .dvc file to git
-        subprocess.run(["git", "add", f"{file_path}.dvc"], check=True)
-        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=True)
-        print(f"✅ {file_path} tracked with DVC and committed")
+        
+        # Auto-stage DVC file in Git
+        dvc_file = f"{file_path}.dvc"
+        subprocess.run(["git", "add", dvc_file], check=True)
+        
+        # Commit Git changes automatically
+        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=False)
+        print(f"✅ {file_path} tracked with DVC and Git commit attempted")
     except subprocess.CalledProcessError as e:
-        print(f"⚠️ Failed to track {file_path} with DVC: {e}")
+        print(f"⚠️ Failed to track {file_path} with DVC/Git: {e}")
 
 # --- MLflow logging ---
 def log_with_mlflow(stock_path, news_path):
@@ -86,7 +91,6 @@ def log_with_mlflow(stock_path, news_path):
         # Log metrics
         df_stock = pd.read_csv(stock_path)
         df_news = pd.read_csv(news_path)
-
         mlflow.log_metric("num_stock_records", len(df_stock))
         mlflow.log_metric("num_news_articles", len(df_news))
 
@@ -105,11 +109,14 @@ def log_with_mlflow(stock_path, news_path):
 
         # Optional: stock plot
         try:
-            df_stock["Close"].plot(title="Closing Prices")
-            plot_path = os.path.join(raw_dir, "stock_plot.png")
-            plt.savefig(plot_path)
-            plt.close()
-            mlflow.log_artifact(plot_path, artifact_path="visuals")
+            if not df_stock.empty and "Close" in df_stock.columns:
+                df_stock["Close"].plot(title="Closing Prices")
+                plot_path = os.path.join(raw_dir, "stock_plot.png")
+                plt.savefig(plot_path)
+                plt.close()
+                mlflow.log_artifact(plot_path, artifact_path="visuals")
+            else:
+                print("⚠️ Stock CSV empty or 'Close' column missing. Skipping plot.")
         except Exception as e:
             print(f"⚠️ Failed to plot closing prices: {e}")
 
@@ -121,7 +128,7 @@ if __name__ == "__main__":
         stock_path = fetch_stock_data()
         news_path = fetch_news_data()
 
-        # Track files with DVC
+        # Track files with DVC + Git auto-stage
         track_with_dvc(stock_path)
         track_with_dvc(news_path)
 

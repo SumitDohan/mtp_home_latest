@@ -1,0 +1,4 @@
+[core]
+    remote = myremote
+['remote "myremote"']
+    url = /home/sweta/mtp_home_latest/mtp_home_latest/data_dvc_remote

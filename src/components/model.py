@@ -14,17 +14,16 @@ RAW_PATH = os.path.join(PROJECT_ROOT, "data/raw")
 PROCESSED_PATH = os.path.join(PROJECT_ROOT, "data/processed")
 os.makedirs(PROCESSED_PATH, exist_ok=True)
 
-# --- Load latest news CSV ---
-news_files = sorted(glob.glob(os.path.join(RAW_PATH, "news_*.csv")))
+# --- Load latest processed news CSV ---
+news_files = sorted(glob.glob(os.path.join(PROCESSED_PATH, "processed_news*.csv")))
 if not news_files:
-    raise FileNotFoundError("❌ No news CSV files found in data/raw/")
-news_file = news_files[-1]
-print(f"📂 Using news file: {news_file}")
+    raise FileNotFoundError("❌ No processed news CSV files found in data/processed/")
+news_file = news_files[-1]  # latest processed file
+print(f"📂 Using processed news file: {news_file}")
 
-# --- Load news data ---
 news_df = pd.read_csv(news_file)
 if news_df.empty or "title" not in news_df.columns:
-    raise ValueError("❌ News DataFrame is empty or missing 'title' column")
+    raise ValueError("❌ Processed news DataFrame is empty or missing 'title' column")
 
 # --- Clean titles ---
 news_df = news_df[news_df["title"].notnull() & (news_df["title"].str.strip() != "")]
@@ -85,15 +84,22 @@ def track_with_dvc(file_path):
     try:
         subprocess.run([sys.executable, "-m", "dvc", "add", file_path], check=True)
         subprocess.run(["git", "add", f"{file_path}.dvc"], check=True)
-        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=True)
-        print(f"✅ {file_path} tracked with DVC and committed")
+        subprocess.run(["git", "commit", "-m", f"Track {os.path.basename(file_path)} with DVC"], check=False)
+        print(f"✅ {file_path} tracked with DVC and Git commit attempted")
     except subprocess.CalledProcessError as e:
-        print(f"⚠️ Failed to track {file_path} with DVC: {e}")
+        print(f"⚠️ Failed to track {file_path} with DVC/Git: {e}")
 
 track_with_dvc(output_file)
 
+# --- Optional: push to DVC remote ---
+try:
+    subprocess.run([sys.executable, "-m", "dvc", "push"], check=True)
+    print(f"📤 Pushed {output_file} to default DVC remote")
+except subprocess.CalledProcessError as e:
+    print(f"⚠️ Failed to push {output_file} to DVC remote: {e}")
+
 # --- Log to MLflow ---
-mlflow.set_tracking_uri("file:/home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
+mlflow.set_tracking_uri("file:///home/sweta/mtp_home_latest/mtp_home_latest/mlruns")
 mlflow.set_experiment("Financial_Sentiment_Pipeline")
 
 with mlflow.start_run(run_name="News_Sentiment_Analysis"):
@@ -106,6 +112,6 @@ with mlflow.start_run(run_name="News_Sentiment_Analysis"):
     for label, count in label_counts.items():
         mlflow.log_metric(f"count_{label}", count)
     mlflow.log_artifact(output_file, artifact_path="results")
-    mlflow.log_artifact(news_file, artifact_path="raw_news")
+    mlflow.log_artifact(news_file, artifact_path="processed_news")
 
 print("✅ Sentiment analysis complete and logged to MLflow.")
