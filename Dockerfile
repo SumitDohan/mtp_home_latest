@@ -22,11 +22,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy only requirements first for caching
 COPY requirements.txt ./
 
-# Upgrade pip and install dependencies
+# Upgrade pip and install Python dependencies
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the source code
+# Copy source code
 COPY src/ ./src
 
 # Create MLflow run directory (persist MLflow logs)
@@ -37,21 +37,22 @@ ENV PYTHONUNBUFFERED=1 \
     MLFLOW_TRACKING_URI=file:/app/mlruns \
     MLFLOW_PORT=5050 \
     FASTAPI_PORT=8000 \
-    USE_DVC=false \
+    USE_DVC=true \
     TZ=Asia/Kolkata
 
-# Expose ports for MLflow & FastAPI
+# Expose ports
 EXPOSE ${FASTAPI_PORT} ${MLFLOW_PORT}
 
 # Configure Git safe directory to avoid warnings
 RUN git config --global --add safe.directory /app
 
-# Clean __pycache__ before running pipeline
-# Run pipeline components sequentially
-# Keep MLflow UI & FastAPI running
+# Pipeline entrypoint: pull DVC data, run pipeline, start servers
 CMD bash -c "\
 echo '🧹 Cleaning cache directories...' && \
 find /app/src -name '__pycache__' -exec rm -rf {} + && \
+if [ \"$USE_DVC\" = \"true\" ]; then \
+    echo '📥 Pulling DVC-tracked data...' && dvc pull; \
+fi && \
 echo '📥 Running Ingestion...' && python src/components/ingestion.py && \
 echo '🔄 Running Preprocessing...' && python src/components/preprocessing.py && \
 echo '🧠 Running Model...' && python src/components/model.py && \
