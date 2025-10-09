@@ -26,24 +26,36 @@ COPY requirements.txt ./
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy src folder
+# Copy the source code
 COPY src/ ./src
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV MLFLOW_TRACKING_URI=file:/app/mlruns
-ENV MLFLOW_PORT=5050        
-ENV FASTAPI_PORT=8000       
+# Create MLflow run directory (persist MLflow logs)
+RUN mkdir -p /app/mlruns
 
-# Expose ports
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    MLFLOW_TRACKING_URI=file:/app/mlruns \
+    MLFLOW_PORT=5050 \
+    FASTAPI_PORT=8000 \
+    USE_DVC=false \
+    TZ=Asia/Kolkata
+
+# Expose ports for MLflow & FastAPI
 EXPOSE ${FASTAPI_PORT} ${MLFLOW_PORT}
 
-# Entrypoint: run pipeline + MLflow + FastAPI
+# Configure Git safe directory to avoid warnings
+RUN git config --global --add safe.directory /app
+
+# Clean __pycache__ before running pipeline
+# Run pipeline components sequentially
+# Keep MLflow UI & FastAPI running
 CMD bash -c "\
-if [ ! -d /app/mlruns ]; then mkdir /app/mlruns; fi && \
-python src/components/ingestion.py && \
-python src/components/preprocessing.py && \
-python src/components/model.py && \
-python src/components/feature.py && \
+echo '🧹 Cleaning cache directories...' && \
+find /app/src -name '__pycache__' -exec rm -rf {} + && \
+echo '📥 Running Ingestion...' && python src/components/ingestion.py && \
+echo '🔄 Running Preprocessing...' && python src/components/preprocessing.py && \
+echo '🧠 Running Model...' && python src/components/model.py && \
+echo '📊 Running Feature Extraction...' && python src/components/feature.py && \
+echo '🚀 Starting MLflow UI and FastAPI servers...' && \
 mlflow ui --host 0.0.0.0 --port ${MLFLOW_PORT} & \
 uvicorn src.api.app:app --host 0.0.0.0 --port ${FASTAPI_PORT}"
