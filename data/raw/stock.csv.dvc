@@ -1,6 +1,6 @@
 outs:
-- md5: 44b23d0d37af700eb5521cf519bc76e7
-  size: 218
+- md5: ad5f5090f04a17be82da2e67cd8c8a62
+  size: 516
   hash: md5
   path: stock.csv
   isexec: true
