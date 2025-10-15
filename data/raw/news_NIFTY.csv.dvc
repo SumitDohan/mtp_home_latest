@@ -1,6 +1,6 @@
 outs:
-- md5: 920be1dc3d8c4039809dd374ebb1bfdb
-  size: 29126
+- md5: 5da2a304bfa78dffe43f5b04465a3afe
+  size: 20276
   hash: md5
   path: news_NIFTY.csv
   isexec: true
