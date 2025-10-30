@@ -4,7 +4,7 @@ import json
 import yfinance as yf
 import pandas as pd
 import feedparser
-from datetime import date
+from datetime import date, timedelta
 import mlflow
 import subprocess
 import sys
@@ -41,11 +41,9 @@ def safe_dvc_command(cmd_list):
 # MLflow setup (writable path)
 # =========================================================
 def get_mlruns_path():
-    # Inside Docker or CI, use /app
     if DOCKER_MODE or CI_MODE:
         path = "/app/mlruns"
     else:
-        # On host, use home directory
         home = os.path.expanduser("~")
         path = os.path.join(home, "mtp_home_latest", "mlruns")
     return path
@@ -61,8 +59,13 @@ print(f"ℹ️ MLflow tracking at: {mlruns_dir}")
 # =========================================================
 ticker = "^NSEI"
 query = "Nifty"
-start_date = "2025-10-07"
-end_date = date.today().isoformat()
+
+# Dynamically select date range: previous to previous day → previous day
+today = date.today()
+end_date = (today - timedelta(days=1)).isoformat()      # yesterday
+start_date = (today - timedelta(days=2)).isoformat()    # day before yesterday
+
+print(f"📅 Date range automatically set: {start_date} → {end_date}")
 
 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 raw_dir = os.path.join(repo_root, "data", "raw")
@@ -153,7 +156,8 @@ def log_with_mlflow(stock_path=None, news_path=None):
             json.dump(summary, f, indent=2)
         mlflow.log_artifact(summary_path, artifact_path="raw_data")
 
-        print("📦 Data artifacts, params, metrics, and summary logged to MLflow")
+        print(f"📦 Data artifacts, params, metrics, and summary logged to MLflow")
+        print(f"🗓️ Summary: {json.dumps(summary, indent=2)}")
 
 # =========================================================
 # Main

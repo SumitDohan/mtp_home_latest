@@ -110,7 +110,7 @@ percent_positive = (label_counts.get("positive", 0) / total_articles) * 100
 percent_neutral = (label_counts.get("neutral", 0) / total_articles) * 100
 percent_negative = (label_counts.get("negative", 0) / total_articles) * 100
 
-if 33 <= percent_positive <= 40 and 25 <= percent_neutral <= 30:
+if 25 <= percent_positive and 25 <= percent_neutral:
     investment_advice = "GOOD TIME TO BUY STOCKS"
 elif 45 <= percent_neutral <= 50:
     investment_advice = "NORMAL DAY TO DO TRANSACTIONS"

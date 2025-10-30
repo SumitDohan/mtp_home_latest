@@ -1,4 +1,3 @@
-# src/feature.py
 import os
 import glob
 import pandas as pd
@@ -48,12 +47,22 @@ def safe_dvc_command(cmd_list):
         print(f"⚠️ DVC command failed: {e}")
 
 # =========================================================
-# Load Latest News CSV
+# Load Latest News CSV (handles both timestamped and static names)
 # =========================================================
-news_files = sorted(glob.glob(os.path.join(RAW_PATH, "news_*.csv")))
+pattern_list = [
+    os.path.join(RAW_PATH, "news_*.csv"),   # e.g. news_2025-10-30.csv
+    os.path.join(RAW_PATH, "news_NIFTY.csv")  # fallback static file
+]
+
+news_files = []
+for pattern in pattern_list:
+    news_files.extend(glob.glob(pattern))
+
 if not news_files:
     raise FileNotFoundError(f"❌ No news CSV files found in {RAW_PATH}")
-news_file = news_files[-1]
+
+# Pick the most recently modified file
+news_file = max(news_files, key=os.path.getmtime)
 print(f"📰 Using latest news file: {news_file}")
 
 # =========================================================

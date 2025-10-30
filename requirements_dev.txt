@@ -15,5 +15,6 @@ tox
 black
 flake8
 mypy
-
+nltk
+uvicorn
 -e .
