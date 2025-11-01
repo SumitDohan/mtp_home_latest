@@ -81,6 +81,7 @@ jobs:
           docker run --rm \
             -e CI=true \
             -e USE_DVC=false \
+            -p 8081:8081 \
             -v ${{ github.workspace }}/data:/app/data \
             -v ${{ github.workspace }}/src/mlruns:/app/mlruns \
             -v ${{ github.workspace }}/.dvc:/app/.dvc \
@@ -89,7 +90,9 @@ jobs:
               python src/components/ingestion.py && \
               python src/components/preprocessing.py && \
               python src/components/model.py && \
-              python src/components/feature.py"
+              python src/components/feature.py && \
+              uvicorn src.api.main:app --host 0.0.0.0 --port 8081 & \
+              sleep 15 && curl http://localhost:8081/health"
 
       - name: 📦 Upload MLflow Logs
         if: always()

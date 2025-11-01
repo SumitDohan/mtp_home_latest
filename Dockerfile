@@ -32,7 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt ./ 
 
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir dvc[s3]
 
 # ============================================================
 # ✅ Copy source code
@@ -58,7 +59,7 @@ RUN git config --global --add safe.directory /app && \
 ENV PYTHONUNBUFFERED=1 \
     MLFLOW_TRACKING_URI=file:/app/mlruns \
     MLFLOW_PORT=5050 \
-    FASTAPI_PORT=8000 \
+    FASTAPI_PORT=8081 \
     USE_DVC=true \
     CI=false \
     TZ=Asia/Kolkata
@@ -80,6 +81,8 @@ if [ \"$USE_DVC\" = \"true\" ]; then \
     echo '📥 Pulling DVC-tracked data...' && \
     dvc pull || (echo '⚠️ DVC pull failed — attempting to reinitialize...' && \
     dvc init --no-scm && echo '✅ DVC reinitialized (no-scm mode)'); \
+else \
+    echo 'ℹ️ USE_DVC=false — skipping DVC pull'; \
 fi && \
 
 # --- Auto-download missing CSVs ---
