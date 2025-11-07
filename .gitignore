@@ -12,3 +12,8 @@ data/*
 !data/raw/
 !data/raw/*.dvc
 !data/raw/.gitignore
+# Ignore GitHub Actions self-hosted runner files
+actions-runner/
+# Ignore generated data and local credentials
+github_cicd*
+
