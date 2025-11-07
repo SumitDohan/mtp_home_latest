@@ -1,14 +1,10 @@
-name: MLOps CI/CD Pipeline
+name: MLOps CI/CD Pipeline (Optimized)
 
 on:
   push:
-    branches:
-      - master
-      - main
+    branches: [ master, main ]
   pull_request:
-    branches:
-      - master
-      - main
+    branches: [ master, main ]
   workflow_dispatch:
   schedule:
     - cron: '0 6 * * *' # daily 6 AM UTC
@@ -21,7 +17,7 @@ permissions:
 jobs:
   build-and-test:
     name: 🧪 Build & Dependency Setup
-    runs-on: self-hosted   # ✅ use your local runner (sudeepta-PowerEdge-R760)
+    runs-on: self-hosted
     steps:
       - name: 📂 Checkout Repository
         uses: actions/checkout@v4
@@ -30,14 +26,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
-      - name: ⚙️ Cache Dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          cache: 'pip'   # ✅ Automatically cache pip dependencies
 
       - name: ⚙️ Install Dependencies
         run: |
@@ -50,25 +39,41 @@ jobs:
 
   run-pipeline-container:
     name: 🚀 Build, Push, and Test Docker Pipeline
-    runs-on: self-hosted   # ✅ runs directly on your local machine
+    runs-on: self-hosted
     needs: build-and-test
     steps:
       - name: 📂 Checkout Repository
         uses: actions/checkout@v4
 
+      # ✅ Cache Docker layers for faster rebuilds
+      - name: 🐳 Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       - name: 🔑 Login to DockerHub
         run: |
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-      - name: 🏗️ Build Docker Image
+      - name: 🏗️ Build Docker Image (with cache)
         run: |
-          docker build -t sumitdohanropar/mtp:latest .
+          docker build \
+            --cache-from=type=local,src=/tmp/.buildx-cache \
+            --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            -t sumitdohanropar/mtp:latest .
 
-      - name: 🐳 Push Docker Image
+      - name: 🐳 Move new cache
         run: |
-          docker push sumitdohanropar/mtp:latest
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      - name: 📦 Optional DVC Pull
+      - name: 📦 Push Docker Image
+        run: docker push sumitdohanropar/mtp:latest
+
+      - name: 🧩 Optional DVC Pull
         run: |
           python -m pip install dvc[s3]
           if [ -f ".dvc/config" ]; then
@@ -78,7 +83,7 @@ jobs:
             echo "ℹ️ No DVC remote configured — skipping."
           fi
 
-      - name: 🧩 Test Pipeline in Container
+      - name: 🧠 Test MLOps Pipeline
         run: |
           docker run --rm \
             -e CI=true \
@@ -88,17 +93,17 @@ jobs:
             -v ${{ github.workspace }}/src/mlruns:/app/mlruns \
             sumitdohanropar/mtp:latest \
             bash -c "\
-              echo '🏁 Running MLOps pipeline...' && \
+              echo '🏁 Running pipeline...' && \
               python src/components/ingestion.py && \
               python src/components/preprocessing.py && \
               python src/components/model.py && \
               python src/components/feature.py && \
-              echo '✅ CI test complete'
+              echo '✅ CI test complete' \
             "
 
   deploy-to-local:
     name: 🚀 Deploy to Local Server (172.26.1.219)
-    runs-on: self-hosted   # ✅ also run this on your local self-hosted runner
+    runs-on: self-hosted
     needs: run-pipeline-container
     steps:
       - name: 📂 Checkout Repository
