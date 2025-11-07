@@ -2,9 +2,13 @@ name: MLOps CI/CD Pipeline
 
 on:
   push:
-    branches: [master, main]
+    branches:
+      - master
+      - main
   pull_request:
-    branches: [master, main]
+    branches:
+      - master
+      - main
   workflow_dispatch:
   schedule:
     - cron: '0 6 * * *' # daily 6 AM UTC
@@ -17,8 +21,7 @@ permissions:
 jobs:
   build-and-test:
     name: 🧪 Build & Dependency Setup
-    runs-on: self-hosted   # ✅ local runner (sudeepta-PowerEdge-R760)
-
+    runs-on: self-hosted   # ✅ use your local runner (sudeepta-PowerEdge-R760)
     steps:
       - name: 📂 Checkout Repository
         uses: actions/checkout@v4
@@ -28,32 +31,27 @@ jobs:
         with:
           python-version: '3.10'
 
-      # ⚡ Optimized cache: only wheels (small, fast to restore)
-      - name: ⚙️ Cache pip wheels
+      - name: ⚙️ Cache Dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip/wheels
-          key: ${{ runner.os }}-pip-wheels-${{ hashFiles('**/requirements.txt') }}
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-wheels-
+            ${{ runner.os }}-pip-
 
       - name: ⚙️ Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --prefer-binary -r requirements.txt
+          pip install -r requirements.txt
           pip install dvc[s3]
-          # clean old cache to reduce size
-          pip cache purge || true
 
       - name: ⏭️ Skip Tests
         run: echo "Skipping unit tests (no tests configured)."
 
-
   run-pipeline-container:
     name: 🚀 Build, Push, and Test Docker Pipeline
-    runs-on: self-hosted
+    runs-on: self-hosted   # ✅ runs directly on your local machine
     needs: build-and-test
-
     steps:
       - name: 📂 Checkout Repository
         uses: actions/checkout@v4
@@ -98,12 +96,10 @@ jobs:
               echo '✅ CI test complete'
             "
 
-
   deploy-to-local:
     name: 🚀 Deploy to Local Server (172.26.1.219)
-    runs-on: self-hosted
+    runs-on: self-hosted   # ✅ also run this on your local self-hosted runner
     needs: run-pipeline-container
-
     steps:
       - name: 📂 Checkout Repository
         uses: actions/checkout@v4
