@@ -18,6 +18,7 @@ env:
   PYTHON_VERSION: '3.10'
   WHEELHOUSE_DIR: '.wheelhouse'
   IMAGE_NAME: 'sumitdohanropar/mtp:latest'
+  LOCAL_WHEEL_CACHE: '/home/sweta/.cache/mtp_wheelhouse'
 
 jobs:
   build-and-test:
@@ -28,7 +29,7 @@ jobs:
       - name: 📂 Checkout Repository
         uses: actions/checkout@v4
 
-      # Reuse pip cache (helps avoid repeated downloads)
+      # keep pip cache to speed up network downloads (small)
       - name: 🗄️ Restore pip cache
         uses: actions/cache@v4
         with:
@@ -38,16 +39,6 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}-${{ env.PYTHON_VERSION }}
           restore-keys: |
             ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-
-
-      # Cache the built wheelhouse directory instead of uploading it
-      - name: 🔁 Restore wheelhouse cache
-        id: wheel-cache
-        uses: actions/cache@v4
-        with:
-          path: .wheelhouse
-          key: wheelhouse-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            wheelhouse-${{ runner.os }}-
 
       - name: 🐍 Use prepopulated Python from self-hosted runner
         shell: bash
@@ -67,16 +58,33 @@ jobs:
       - name: ⚙️ Upgrade pip & wheel
         run: python -m pip install --upgrade pip wheel setuptools
 
-      - name: 🛠️ Build wheelhouse (only if cache miss)
-        if: steps.wheel-cache.outputs.cache-hit != 'true'
+      - name: 🔁 Prepare local persistent wheelhouse
         run: |
-          echo "Cache miss — rebuilding wheelhouse..."
-          rm -rf ${{ env.WHEELHOUSE_DIR }}
-          mkdir -p ${{ env.WHEELHOUSE_DIR }}
-          if [ -f requirements.txt ]; then
-            pip wheel -r requirements.txt -w ${{ env.WHEELHOUSE_DIR }}
+          mkdir -p "${{ env.LOCAL_WHEEL_CACHE }}" "${{ env.WHEELHOUSE_DIR }}"
+          echo "Local persistent wheel dir: ${{ env.LOCAL_WHEEL_CACHE }}"
+          if [ -d "${{ env.LOCAL_WHEEL_CACHE }}" ] && [ -n "$(ls -A ${{ env.LOCAL_WHEEL_CACHE }} 2>/dev/null)" ]; then
+            echo "✅ Found cached wheels — copying to workspace..."
+            cp -a "${{ env.LOCAL_WHEEL_CACHE }}"/* "${{ env.WHEELHOUSE_DIR }}/" || true
+          else
+            echo "🆕 No local wheel cache found, will build fresh wheels."
           fi
-          ls -lh ${{ env.WHEELHOUSE_DIR }}
+
+      - name: 🛠️ Build wheelhouse (if missing wheels)
+        run: |
+          if [ -z "$(ls -A ${{ env.WHEELHOUSE_DIR }} 2>/dev/null)" ]; then
+            echo "Building new wheelhouse..."
+            mkdir -p ${{ env.WHEELHOUSE_DIR }}
+            if [ -f requirements.txt ]; then
+              pip wheel -r requirements.txt -w ${{ env.WHEELHOUSE_DIR }}
+            fi
+            # copy built wheels to runner-local persistent cache for future runs
+            mkdir -p "${{ env.LOCAL_WHEEL_CACHE }}"
+            cp -a ${{ env.WHEELHOUSE_DIR }}/* "${{ env.LOCAL_WHEEL_CACHE }}/" || true
+          else
+            echo "Using existing wheels from local cache."
+          fi
+          echo "Final wheelhouse content:"
+          ls -lh ${{ env.WHEELHOUSE_DIR }} || true
 
       - name: 🧩 Install Dependencies (prefer wheelhouse)
         run: |
@@ -100,19 +108,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 🔁 Restore wheelhouse cache (fast reuse)
-        uses: actions/cache@v4
-        with:
-          path: .wheelhouse
-          key: wheelhouse-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            wheelhouse-${{ runner.os }}-
-
-      - name: 🔧 Prepare wheelhouse for container
+      - name: 🔁 Restore local persistent wheelhouse
         run: |
           mkdir -p wheelhouse
-          if [ -d ".wheelhouse" ] && [ -n "$(ls -A .wheelhouse 2>/dev/null)" ]; then
-            cp -a .wheelhouse/* wheelhouse/ || true
+          if [ -d "${{ env.LOCAL_WHEEL_CACHE }}" ] && [ -n "$(ls -A ${{ env.LOCAL_WHEEL_CACHE }} 2>/dev/null)" ]; then
+            echo "✅ Copying wheels from local runner cache..."
+            cp -a "${{ env.LOCAL_WHEEL_CACHE }}"/* wheelhouse/ || true
+          else
+            echo "⚠️ No local wheel cache found; proceeding without wheels."
           fi
           ls -lh wheelhouse || true
 
