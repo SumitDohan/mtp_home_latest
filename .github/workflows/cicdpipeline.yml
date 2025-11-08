@@ -1,4 +1,4 @@
-name: MLOps CI/CD Pipeline (Pull Image)
+name: MLOps CI/CD Pipeline (Pull Image — Use Prepopulated Python)
 
 on:
   push:
@@ -23,7 +23,8 @@ env:
 jobs:
   build-and-test:
     name: 🧪 Build & Dependency Setup
-    runs-on: self-hosted
+    # require the specially prepared self-hosted runner (add this label in GitHub settings)
+    runs-on: [self-hosted, prepopulated-python]
     outputs:
       wheel-artifact: ${{ steps.upload-wheelhouse.outputs.artifact-path || '' }}
     steps:
@@ -40,11 +41,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
+      - name: 🐍 Use prepopulated Python from self-hosted runner
+        shell: bash
+        run: |
+          # point to the expected toolcache path for Python 3.10.19 x64
+          # adjust the version if your prepopulated cache is a different minor version
+          TOOL_DIR="${RUNNER_TOOL_CACHE:-/home/sweta/mtp_home_latest/mtp_home_latest/actions-runner/_work/_tool}/Python/3.10.19/x64"
+          echo "Using prepopulated Python at: $TOOL_DIR"
+          if [ -x "$TOOL_DIR/bin/python" ]; then
+            export PATH="$TOOL_DIR/bin:$PATH"
+            python --version
+            pip --version
+          else
+            echo "ERROR: No cached python found at $TOOL_DIR/bin/python"
+            ls -la "$(dirname "$TOOL_DIR")" || true
+            exit 1
+          fi
 
       - name: ⚙️ Upgrade pip & wheel
         run: python -m pip install --upgrade pip wheel setuptools
@@ -79,7 +91,7 @@ jobs:
 
   run-pipeline-container:
     name: 🚀 Pull, Test Docker Image
-    runs-on: self-hosted
+    runs-on: [self-hosted, prepopulated-python]
     needs: build-and-test
     steps:
       - name: 📂 Checkout Repository
@@ -112,9 +124,6 @@ jobs:
 
       - name: 🧠 Test MLOps Pipeline inside pulled container (non-blocking)
         run: |
-          # If your image already contains all dependencies, no additional install is required.
-          # If you produced a wheelhouse in build-and-test and want to install it into the pulled image,
-          # mount the wheelhouse and install from it (optional).
           docker run --rm \
             -e CI=true \
             -e USE_DVC=false \
@@ -126,7 +135,6 @@ jobs:
             bash -c "\
               echo '🏁 Running pipeline from pulled image...' && \
               if [ -d /app/wheelhouse ]; then \
-                # only run this if your image expects installation from external wheelhouse
                 pip install --no-index --find-links=/app/wheelhouse -r /app/requirements.txt || true; \
               fi && \
               python src/components/ingestion.py || true && \
@@ -138,7 +146,7 @@ jobs:
 
   deploy-to-local:
     name: 🚀 Deploy to Local Server (172.26.1.219)
-    runs-on: self-hosted
+    runs-on: [self-hosted, prepopulated-python]
     needs: run-pipeline-container
     steps:
       - name: 📂 Checkout Repository
@@ -170,4 +178,3 @@ jobs:
               $IMAGE_NAME
 
             echo "✅ Deployment completed successfully."
-            
