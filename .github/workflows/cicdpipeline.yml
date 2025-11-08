@@ -81,13 +81,13 @@ jobs:
       - name: ⏭️ Skip Tests
         run: echo "Skipping unit tests (no tests configured)."
 
-      - name: 📦 Upload wheelhouse artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        id: upload-wheelhouse
-        with:
-          name: wheelhouse
-          path: ${{ env.WHEELHOUSE_DIR }}
+      # - name: 📦 Upload wheelhouse artifact
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   id: upload-wheelhouse
+      #   with:
+      #     name: wheelhouse
+      #     path: ${{ env.WHEELHOUSE_DIR }}
 
   run-pipeline-container:
     name: 🚀 Pull, Test Docker Image
