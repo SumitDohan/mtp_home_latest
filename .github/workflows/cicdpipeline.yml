@@ -150,22 +150,23 @@ jobs:
           set -euxo pipefail
 
           CI_CONTAINER="mtp_ci_${{ github.run_id }}"
-          PREV_STOPPED=""
+          PREV_STOPPED=()
 
           echo "Checking for containers using ports 8081 or 5050 and stopping them (recording for restart)..."
           for p in 8081 5050; do
-            for line in $(docker ps --format '{{.ID}} {{.Names}} {{.Ports}}' | grep ":$p" || true); do
-              cid=$(echo "$line" | awk '{print $1}')
+            # collect container IDs that publish this host port (returns IDs only)
+            mapfile -t ids < <(docker ps --filter "publish=${p}" -q || true)
+            for cid in "${ids[@]:-}"; do
               if [ -n "$cid" ]; then
-                echo "Stopping container $cid (holds port $p)"
-                PREV_STOPPED="$PREV_STOPPED $cid"
+                echo "Stopping container $cid (holds host port $p)"
+                PREV_STOPPED+=("$cid")
                 docker stop "$cid" || true
               fi
             done
           done
 
-          echo "Running CI container as $CI_CONTAINER (container kept so we can inspect logs on failure)..."
-          # run container processes as the runner user to avoid root-owned files on mounted volumes
+          echo "CI will run as container name: $CI_CONTAINER"
+          # run container as runner user to avoid root-owned files on mounted volumes
           docker run --name "$CI_CONTAINER" --user "$(id -u):$(id -g)" \
             -e CI=true \
             -e USE_DVC=false \
@@ -197,18 +198,21 @@ jobs:
             mkdir -p ci_artifacts || true
             docker cp "$CI_CONTAINER":/app ci_artifacts || true
 
-            for cid in $PREV_STOPPED; do
+            # restart previously stopped containers (iterate over captured IDs)
+            for cid in "${PREV_STOPPED[@]:-}"; do
               if [ -n "$cid" ]; then
                 echo "Restarting previously stopped container $cid"
                 docker start "$cid" || true
               fi
             done
 
+            # preserve the failed container for inspection and fail the job
             exit "$EXIT_CODE"
           fi
 
+          # success path: remove CI container and restart any previous containers
           docker rm -f "$CI_CONTAINER" || true
-          for cid in $PREV_STOPPED; do
+          for cid in "${PREV_STOPPED[@]:-}"; do
             if [ -n "$cid" ]; then
               echo "Restarting previously stopped container $cid"
               docker start "$cid" || true
