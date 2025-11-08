@@ -192,3 +192,4 @@ jobs:
               $IMAGE_NAME
 
             echo "✅ Deployment completed successfully."
+            
