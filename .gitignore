@@ -17,3 +17,16 @@ actions-runner/
 # Ignore generated data and local credentials
 github_cicd*
 
+# CI debug artifacts and workspace caches
+ci_artifacts/
+*.log
+# processed data / mlruns / caches
+/src/data/processed/
+/src/mlruns/
+/.home-sweta-cache/   # example if you used a host cache; edit as needed
+
+# Hugging Face cache dir (workspace-local)
+.hf_cache/
+# wheelhouse / local caches
+.wheelhouse/
+*.whl

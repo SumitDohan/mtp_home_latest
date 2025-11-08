@@ -128,6 +128,13 @@ jobs:
           fi
           ls -lh wheelhouse || true
 
+      - name: 🔁 Ensure HF workspace cache dir (for transformers/hub)
+        run: |
+          # create a workspace-local cache for Hugging Face to avoid /.cache permission issues
+          mkdir -p "${{ github.workspace }}/.hf_cache"
+          sudo chown -R $(id -u):$(id -g) "${{ github.workspace }}/.hf_cache" || true
+          ls -ld "${{ github.workspace }}/.hf_cache" || true
+
       - name: 🔑 Login to Docker registry (optional for private images)
         env:
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
@@ -170,6 +177,9 @@ jobs:
           docker run --name "$CI_CONTAINER" --user "$(id -u):$(id -g)" \
             -e CI=true \
             -e USE_DVC=false \
+            -e HF_HOME=/app/.hf_cache \
+            -e TRANSFORMERS_CACHE=/app/.hf_cache \
+            -v "${{ github.workspace }}/.hf_cache":/app/.hf_cache:rw \
             -v "${{ github.workspace }}/data":/app/data \
             -v "${{ github.workspace }}/src/mlruns":/app/mlruns \
             -v "${{ github.workspace }}/wheelhouse":/app/wheelhouse:ro \
