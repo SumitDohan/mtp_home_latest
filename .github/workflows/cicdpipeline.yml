@@ -136,12 +136,28 @@ jobs:
           docker pull "$IMAGE_NAME"
           docker images | grep "$(echo $IMAGE_NAME | cut -d: -f1)" || true
 
+      - name: 🧹 Stop any container using ports 8081 or 5050
+        run: |
+          echo "Checking for containers using ports 8081 or 5050..."
+          for p in 8081 5050; do
+            # find containers publishing this port (works for docker ps output)
+            for cid in $(docker ps --format '{{.ID}} {{.Ports}}' | grep ":$p" | awk '{print $1}' || true); do
+              if [ -n "$cid" ]; then
+                echo "Stopping container $cid (using port $p)"
+                docker stop $cid || true
+                docker rm $cid || true
+              fi
+            done
+          done
+          echo "✅ Ports 8081 and 5050 appear free now."
+
       - name: 🧠 Test MLOps Pipeline inside pulled container (non-blocking)
         run: |
           docker run --rm \
             -e CI=true \
             -e USE_DVC=false \
             -p 8081:8081 \
+            -p 5050:5050 \
             -v ${{ github.workspace }}/data:/app/data \
             -v ${{ github.workspace }}/src/mlruns:/app/mlruns \
             -v ${{ github.workspace }}/wheelhouse:/app/wheelhouse:ro \
@@ -192,4 +208,3 @@ jobs:
               $IMAGE_NAME
 
             echo "✅ Deployment completed successfully."
-            
