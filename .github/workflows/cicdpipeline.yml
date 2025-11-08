@@ -169,5 +169,5 @@ jobs:
               -v /home/sweta/mtp_home_latest/mtp_home_latest/src/mlruns:/app/src/mlruns \
               $IMAGE_NAME
 
-            echo "✅ Deployment completed successfully.""
+            echo "✅ Deployment completed successfully."
             
