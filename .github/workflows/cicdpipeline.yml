@@ -29,6 +29,12 @@ jobs:
       - name: 📂 Checkout Repository
         uses: actions/checkout@v4
 
+      - name: 🧼 Ensure workspace ownership (prevent permission errors)
+        run: |
+          # make workspace writable by the runner user so cleanup and checkout succeed
+          sudo chown -R $(id -u):$(id -g) "${{ github.workspace }}" || true
+          sudo chmod -R u+rwX "${{ github.workspace }}" || true
+
       - name: 🗄️ Restore pip cache
         uses: actions/cache@v4
         with:
@@ -106,6 +112,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: 🧼 Ensure workspace ownership (prevent permission errors)
+        run: |
+          sudo chown -R $(id -u):$(id -g) "${{ github.workspace }}" || true
+          sudo chmod -R u+rwX "${{ github.workspace }}" || true
+
       - name: 🔁 Restore local persistent wheelhouse
         run: |
           mkdir -p wheelhouse
@@ -134,7 +145,7 @@ jobs:
           docker pull "$IMAGE_NAME"
           docker images | grep "$(echo $IMAGE_NAME | cut -d: -f1)" || true
 
-      - name: 🧠 Test MLOps Pipeline inside pulled container (safe stop/start)
+      - name: 🧠 Test MLOps Pipeline inside pulled container (safe stop/start, run as runner user)
         run: |
           set -euxo pipefail
 
@@ -144,7 +155,6 @@ jobs:
           echo "Checking for containers using ports 8081 or 5050 and stopping them (recording for restart)..."
           for p in 8081 5050; do
             for line in $(docker ps --format '{{.ID}} {{.Names}} {{.Ports}}' | grep ":$p" || true); do
-              # line looks like: "<id> <name> <ports...>"
               cid=$(echo "$line" | awk '{print $1}')
               if [ -n "$cid" ]; then
                 echo "Stopping container $cid (holds port $p)"
@@ -155,7 +165,8 @@ jobs:
           done
 
           echo "Running CI container as $CI_CONTAINER (container kept so we can inspect logs on failure)..."
-          docker run --name "$CI_CONTAINER" \
+          # run container processes as the runner user to avoid root-owned files on mounted volumes
+          docker run --name "$CI_CONTAINER" --user "$(id -u):$(id -g)" \
             -e CI=true \
             -e USE_DVC=false \
             -v "${{ github.workspace }}/data":/app/data \
@@ -183,11 +194,9 @@ jobs:
 
           if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "unknown" ]; then
             echo "Container failed with exit code $EXIT_CODE — collecting artifacts and restoring previous containers..."
-            # example of copying out potential artifacts (optional)
             mkdir -p ci_artifacts || true
             docker cp "$CI_CONTAINER":/app ci_artifacts || true
 
-            # restart previously stopped containers
             for cid in $PREV_STOPPED; do
               if [ -n "$cid" ]; then
                 echo "Restarting previously stopped container $cid"
@@ -195,11 +204,9 @@ jobs:
               fi
             done
 
-            # keep container for inspection and fail job
             exit "$EXIT_CODE"
           fi
 
-          # success path: remove CI container and restart any previous containers
           docker rm -f "$CI_CONTAINER" || true
           for cid in $PREV_STOPPED; do
             if [ -n "$cid" ]; then
