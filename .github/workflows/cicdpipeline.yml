@@ -29,7 +29,6 @@ jobs:
       - name: 📂 Checkout Repository
         uses: actions/checkout@v4
 
-      # keep pip cache to speed up network downloads (small)
       - name: 🗄️ Restore pip cache
         uses: actions/cache@v4
         with:
@@ -77,7 +76,6 @@ jobs:
             if [ -f requirements.txt ]; then
               pip wheel -r requirements.txt -w ${{ env.WHEELHOUSE_DIR }}
             fi
-            # copy built wheels to runner-local persistent cache for future runs
             mkdir -p "${{ env.LOCAL_WHEEL_CACHE }}"
             cp -a ${{ env.WHEELHOUSE_DIR }}/* "${{ env.LOCAL_WHEEL_CACHE }}/" || true
           else
@@ -136,43 +134,79 @@ jobs:
           docker pull "$IMAGE_NAME"
           docker images | grep "$(echo $IMAGE_NAME | cut -d: -f1)" || true
 
-      - name: 🧹 Stop any container using ports 8081 or 5050
+      - name: 🧠 Test MLOps Pipeline inside pulled container (safe stop/start)
         run: |
-          echo "Checking for containers using ports 8081 or 5050..."
+          set -euxo pipefail
+
+          CI_CONTAINER="mtp_ci_${{ github.run_id }}"
+          PREV_STOPPED=""
+
+          echo "Checking for containers using ports 8081 or 5050 and stopping them (recording for restart)..."
           for p in 8081 5050; do
-            # find containers publishing this port (works for docker ps output)
-            for cid in $(docker ps --format '{{.ID}} {{.Ports}}' | grep ":$p" | awk '{print $1}' || true); do
+            for line in $(docker ps --format '{{.ID}} {{.Names}} {{.Ports}}' | grep ":$p" || true); do
+              # line looks like: "<id> <name> <ports...>"
+              cid=$(echo "$line" | awk '{print $1}')
               if [ -n "$cid" ]; then
-                echo "Stopping container $cid (using port $p)"
-                docker stop $cid || true
-                docker rm $cid || true
+                echo "Stopping container $cid (holds port $p)"
+                PREV_STOPPED="$PREV_STOPPED $cid"
+                docker stop "$cid" || true
               fi
             done
           done
-          echo "✅ Ports 8081 and 5050 appear free now."
 
-      - name: 🧠 Test MLOps Pipeline inside pulled container (non-blocking)
-        run: |
-          docker run --rm \
+          echo "Running CI container as $CI_CONTAINER (container kept so we can inspect logs on failure)..."
+          docker run --name "$CI_CONTAINER" \
             -e CI=true \
             -e USE_DVC=false \
-            -p 8081:8081 \
-            -p 5050:5050 \
-            -v ${{ github.workspace }}/data:/app/data \
-            -v ${{ github.workspace }}/src/mlruns:/app/mlruns \
-            -v ${{ github.workspace }}/wheelhouse:/app/wheelhouse:ro \
+            -v "${{ github.workspace }}/data":/app/data \
+            -v "${{ github.workspace }}/src/mlruns":/app/mlruns \
+            -v "${{ github.workspace }}/wheelhouse":/app/wheelhouse:ro \
             $IMAGE_NAME \
             bash -c "\
               echo '🏁 Running pipeline from pulled image...' && \
               if [ -d /app/wheelhouse ]; then \
                 pip install --no-index --find-links=/app/wheelhouse -r /app/requirements.txt || true; \
               fi && \
-              python src/components/ingestion.py || true && \
-              python src/components/preprocessing.py || true && \
-              python src/components/model.py || true && \
-              python src/components/feature.py || true && \
+              python src/components/ingestion.py || exit 2 && \
+              python src/components/preprocessing.py || exit 3 && \
+              python src/components/model.py || exit 4 && \
+              python src/components/feature.py || exit 5 && \
               echo '✅ CI smoke tests complete' \
-            "
+            " || true
+
+          # Inspect container exit status and logs
+          EXIT_CODE=$(docker inspect "$CI_CONTAINER" --format '{{.State.ExitCode}}' 2>/dev/null || echo "unknown")
+          echo "Container exit code: $EXIT_CODE"
+          echo "===== tail of container logs ====="
+          docker logs --tail 500 "$CI_CONTAINER" || true
+          echo "===== end logs ====="
+
+          if [ "$EXIT_CODE" != "0" ] && [ "$EXIT_CODE" != "unknown" ]; then
+            echo "Container failed with exit code $EXIT_CODE — collecting artifacts and restoring previous containers..."
+            # example of copying out potential artifacts (optional)
+            mkdir -p ci_artifacts || true
+            docker cp "$CI_CONTAINER":/app ci_artifacts || true
+
+            # restart previously stopped containers
+            for cid in $PREV_STOPPED; do
+              if [ -n "$cid" ]; then
+                echo "Restarting previously stopped container $cid"
+                docker start "$cid" || true
+              fi
+            done
+
+            # keep container for inspection and fail job
+            exit "$EXIT_CODE"
+          fi
+
+          # success path: remove CI container and restart any previous containers
+          docker rm -f "$CI_CONTAINER" || true
+          for cid in $PREV_STOPPED; do
+            if [ -n "$cid" ]; then
+              echo "Restarting previously stopped container $cid"
+              docker start "$cid" || true
+            fi
+          done
 
   deploy-to-local:
     name: 🚀 Deploy to Local Server (172.26.1.219)
