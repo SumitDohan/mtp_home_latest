@@ -6,5 +6,9 @@
   "num_stock_records": 3,
   "num_news_articles": 50,
   "use_dvc": true,
-  "git_commit": "eaf731e01091ff5206a572eba71efe1b38f68e3e"
+  "git_commit": "0bc64280cdf8dac78770702a670b2833ca36f03a",
+  "dvc_hashes": {
+    "stock.csv": "51cd69d6910d9897e2c6ed0f9a0be3c2",
+    "news_NIFTY.csv": "865baf24203fc3ca33bd266298c0729e"
+  }
 }

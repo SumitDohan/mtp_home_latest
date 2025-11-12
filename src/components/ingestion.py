@@ -8,6 +8,7 @@ from datetime import date, timedelta
 import subprocess
 import sys
 import argparse
+import re
 from pathlib import Path
 
 # =========================================================
@@ -90,6 +91,46 @@ def get_git_commit_hash(repo_root: Path) -> str | None:
         return None
 
 # =========================================================
+# Utility: read md5 from .dvc file (no external deps)
+# =========================================================
+def read_dvc_md5_from_file(dvc_path: Path) -> str | None:
+    """
+    Parse a .dvc file and extract the md5 value for the first output.
+    Returns the md5 string or None if not found.
+    """
+    if not dvc_path.exists():
+        return None
+    try:
+        text = dvc_path.read_text()
+        # Match lines like: md5: <hex>
+        m = re.search(r"md5:\s*['\"]?([0-9a-fA-F]+)['\"]?", text)
+        if m:
+            return m.group(1)
+        # older/newer formats might use 'etag' or 'hash', try a fallback for 'hash:'
+        m2 = re.search(r"hash:\s*['\"]?([0-9a-fA-F:]+)['\"]?", text)
+        if m2:
+            return m2.group(1)
+    except Exception:
+        return None
+    return None
+
+def collect_dvc_hashes(files: list[Path]) -> dict:
+    """
+    For each data file path, look for a .dvc file next to it and return dict { filename: md5 }.
+    """
+    hashes = {}
+    for p in files:
+        if p is None:
+            continue
+        dvc_file = Path(str(p) + ".dvc")
+        if dvc_file.exists():
+            md5 = read_dvc_md5_from_file(dvc_file)
+            hashes[p.name] = md5
+        else:
+            hashes[p.name] = None
+    return hashes
+
+# =========================================================
 # Main
 # =========================================================
 def main():
@@ -135,7 +176,7 @@ def main():
         if news_path:
             track_with_dvc(news_path, USE_DVC)
 
-        # Write summary with git commit for traceability
+        # Prepare summary with git commit for traceability
         df_stock = pd.read_csv(stock_path) if (stock_path and stock_path.exists()) else pd.DataFrame()
         df_news = pd.read_csv(news_path) if (news_path and news_path.exists()) else pd.DataFrame()
 
@@ -149,6 +190,12 @@ def main():
             "use_dvc": bool(USE_DVC),
             "git_commit": get_git_commit_hash(repo_root)
         }
+
+        # collect md5 hashes from .dvc files (if present)
+        dvc_hashes = collect_dvc_hashes([stock_path, news_path])
+        summary["dvc_hashes"] = dvc_hashes
+
+        # write summary
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2)
         print(f"🗓️ Summary saved to {summary_path}")
